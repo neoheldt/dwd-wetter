@@ -54,6 +54,7 @@ main{max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 12px)
 .grid2 .card{margin:0}
 .big{font-size:28px;font-weight:400}
 .sub{font-size:13px;color:var(--muted);margin-top:4px}
+#map .basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}
 #map{height:380px;border-radius:12px;overflow:hidden;background:#223}
 .radarctl{display:flex;align-items:center;gap:10px;margin-top:10px}
 .radarctl button{background:rgba(255,255,255,.2);border:0;color:#fff;border-radius:50%;width:38px;height:38px;font-size:16px}
@@ -387,8 +388,8 @@ async function initRadar(loc){
   if(map){ map.remove(); map = null; }
   clearInterval(radarTimer); radarTimer = null;
   map = L.map('map', {zoomControl:false, attributionControl:true}).setView([loc.lat, loc.lon], 8);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    subdomains:'abcd', maxZoom:12, attribution:'© OpenStreetMap, © CARTO, Radar © DWD'}).addTo(map);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:12, className:'basemap', attribution:'© OpenStreetMap-Mitwirkende, Radar © DWD'}).addTo(map);
   L.circleMarker([loc.lat, loc.lon], {radius:6, color:'#fff', weight:2, fillColor:'#2f6fd0', fillOpacity:1}).addTo(map);
   radarLayer = L.tileLayer.wms(WMS, {layers:RADAR_LAYER, format:'image/png', transparent:true, version:'1.3.0', opacity:.75}).addTo(map);
   radarTimes = await radarTimeList();
