@@ -86,6 +86,11 @@ svg text{fill:rgba(255,255,255,.8);font-size:10px}
 .btn.sec{background:#2c374a}
 .muted{color:var(--muted);font-size:13px}
 .err{background:rgba(200,40,40,.4);padding:10px 12px;border-radius:12px;margin:10px 0;font-size:14px}
+.tap{cursor:pointer;transition:background .2s}
+.day.tap:active,.d3 .c.tap:active{background:rgba(255,255,255,.12)}
+.selday{background:rgba(255,255,255,.2)!important;border-radius:10px}
+.day.selday{padding-left:6px;padding-right:6px}
+#hourly{scroll-margin-top:calc(env(safe-area-inset-top) + 10px)}
 .foot{font-size:11px;color:var(--muted);text-align:center;margin-top:16px;line-height:1.5}
 .foot a{color:var(--muted)}
 .spin{text-align:center;padding:60px 0;color:var(--muted)}
@@ -126,6 +131,7 @@ const store = {
 let favs = store.get('favs', []);            // [{id,name,lat,lon}]
 let current = store.get('lastGps', null);    // {name,lat,lon}
 let sel = store.get('sel', 'gps');           // 'gps' | fav id
+let selDay = null;
 let data = null, map = null, radarLayer = null, radarTimes = [], radarIdx = 0, radarTimer = null;
 
 /* ===================== Hilfen ===================== */
@@ -298,8 +304,6 @@ function render(){
 
   const gmin = Math.min(...days.map(x => x.min)), gmax = Math.max(...days.map(x => x.max));
   const station = d.cur?.sources?.[0] || d.sources[0];
-  const next24 = future.slice(0, 25);
-  const next48 = future.slice(0, 49);
 
   let h = `<section class="hero">
     <div class="loc">${sel==='gps'?'📍 ':''}${esc(loc.name)}</div>
@@ -314,17 +318,12 @@ function render(){
       <p class="muted">${new Date(a.onset||a.effective).toLocaleString('de-DE')} – ${a.expires?new Date(a.expires).toLocaleString('de-DE'):'offen'}</p></details></div>`;
   }
 
-  h += `<div class="card"><h3>🕒 Stündliche Vorhersage</h3><div class="hours">${
-    next24.map((x,i) => `<div class="h"><div>${i===0?'Jetzt':String(hourOf(x.timestamp)).padStart(2,'0')}</div>
-      <div class="pp">${(x.precipitation_probability??0)>=20?x.precipitation_probability+'%':''}</div>
-      <div class="ic">${icon(x.icon)}</div><div>${r0(x.temperature)}°</div></div>`).join('')
-  }</div><div style="margin-top:10px">${next48.length>2?chartHourly(next48):''}</div>
-  <div class="muted">48 h · Linie: Temperatur · Balken: Niederschlag</div></div>`;
+  h += `<div class="card" id="hourly"></div>`;
 
   const d3 = days.slice(0,3);
   h += `<div class="card"><h3>📅 Die nächsten 3 Tage</h3><div class="d3">${d3.map((x,i) => {
     const segs = [['Morgen',6,12],['Mittag',12,18],['Abend',18,24],['Nacht',0,6]];
-    return `<div class="c"><b>${dayName(x.day,i)}</b><div style="font-size:30px;margin:4px 0">${icon(x.ic)}</div>
+    return `<div class="c tap ${selDay===x.day?'selday':''}" data-day="${x.day}"><b>${dayName(x.day,i)}</b><div style="font-size:30px;margin:4px 0">${icon(x.ic)}</div>
       <div>${r0(x.max)}° / <span class="muted">${r0(x.min)}°</span></div>
       <div class="sub">💧 ${x.p.toFixed(1)} mm · ${x.pp}%<br>💨 ${r0(x.wind)} km/h${x.gust?` (Böen ${r0(x.gust)})`:''}<br>☀️ ${(x.sun/60).toFixed(1)} h</div>
       <div class="seg">${segs.map(([n,a,b]) => { const s = segment(x.hs,a,b); return s?`<span>${n}</span><span>${icon(s.ic)}</span><span>${r0(s.t)}°</span>`:''; }).join('')}</div></div>`;
@@ -332,7 +331,7 @@ function render(){
 
   h += `<div class="card"><h3>🗓️ ${days.length}-Tage-Vorhersage</h3>${days.map((x,i) => {
     const l = (x.min-gmin)/(gmax-gmin||1)*100, w = (x.max-x.min)/(gmax-gmin||1)*100;
-    return `<div class="day"><div>${dayName(x.day,i)}</div><div class="ic">${icon(x.ic)}${x.pp>=30?`<small>${x.pp}%</small>`:''}</div>
+    return `<div class="day tap ${selDay===x.day?'selday':''}" data-day="${x.day}"><div>${dayName(x.day,i)}</div><div class="ic">${icon(x.ic)}${x.pp>=30?`<small>${x.pp}%</small>`:''}</div>
       <div class="lo">${r0(x.min)}°</div><div class="bar"><i style="left:${l}%;width:${Math.max(w,4)}%"></i></div><div>${r0(x.max)}°</div></div>`;
   }).join('')}</div>`;
 
@@ -356,9 +355,46 @@ function render(){
     Aktualisiert ${new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}<br><button class="btn sec" style="width:auto;padding:8px 16px" onclick="refresh(sel==='gps')">↻ Aktualisieren</button></div>`;
 
   $('#app').innerHTML = h;
+  renderHourly();
   renderDots();
   initRadar(loc);
 }
+
+function renderHourly(){
+  const el = $('#hourly'); if(!el || !data) return;
+  const now = Date.now();
+  let hs, title, isNow = !selDay;
+  if(isNow){
+    hs = data.hours.filter(h => new Date(h.timestamp).getTime() >= now - 3600e3);
+    title = 'Stündliche Vorhersage';
+  } else {
+    hs = data.hours.filter(h => localDay(h.timestamp) === selDay);
+    title = new Date(selDay + 'T12:00:00').toLocaleDateString('de-DE', {weekday:'long', day:'2-digit', month:'2-digit'});
+    if(selDay === fmtDate(new Date())) title = 'Heute';
+  }
+  const strip = isNow ? hs.slice(0, 25) : hs;
+  const chart = isNow ? hs.slice(0, 49) : hs;
+  el.innerHTML = `<h3 style="display:flex;justify-content:space-between;align-items:center">🕒 ${esc(title)}
+      ${isNow ? '' : '<button id="hourNow" style="background:rgba(255,255,255,.2);border:0;color:#fff;border-radius:8px;padding:3px 9px;font-size:11px;text-transform:none;letter-spacing:0">Zurück zu Jetzt</button>'}</h3>
+    <div class="hours">${strip.map((x,i) => {
+      const past = new Date(x.timestamp).getTime() < now - 3600e3;
+      return `<div class="h" style="${past?'opacity:.5':''}"><div>${isNow && i===0 ? 'Jetzt' : String(hourOf(x.timestamp)).padStart(2,'0')}</div>
+      <div class="pp">${(x.precipitation_probability??0)>=20?x.precipitation_probability+'%':''}</div>
+      <div class="ic">${icon(x.icon)}</div><div>${r0(x.temperature)}°</div>
+      <div class="pp" style="color:var(--muted)">${(x.precipitation||0)>=0.1?(+x.precipitation).toFixed(1)+' mm':''}</div></div>`;
+    }).join('')}</div>
+    <div style="margin-top:10px">${chart.length>2?chartHourly(chart):''}</div>
+    <div class="muted">${isNow?'48 h':'00–23 Uhr'} · Linie: Temperatur · Balken: Niederschlag${isNow?'':' · ausgegraut: bereits vorbei'}</div>`;
+  const b = $('#hourNow'); if(b) b.onclick = () => setDay(null);
+  el.querySelector('.hours').scrollLeft = 0;
+}
+function setDay(day){
+  selDay = (day === selDay) ? null : day;
+  document.querySelectorAll('[data-day]').forEach(e => e.classList.toggle('selday', e.dataset.day === selDay));
+  renderHourly();
+  $('#hourly').scrollIntoView({behavior:'smooth', block:'start'});
+}
+$('#app').addEventListener('click', e => { const t = e.target.closest('[data-day]'); if(t) setDay(t.dataset.day); });
 
 /* ===================== Radar ===================== */
 async function radarTimeList(){
@@ -426,7 +462,7 @@ function addFav(f){
   store.set('favs', favs);
 }
 async function select(id){
-  sel = id; store.set('sel', sel);
+  sel = id; selDay = null; store.set('sel', sel);
   $('#sheet').classList.remove('open');
   await refresh(id === 'gps');
 }
