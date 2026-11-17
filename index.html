@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DWD Wetter">
+<meta name="theme-color" content="#1d4f91">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<title>DWD Wetter</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{--fg:#fff;--muted:rgba(255,255,255,.72);--card:rgba(255,255,255,.14);--line:rgba(255,255,255,.18);
+  --bg1:#2b6cc4;--bg2:#5aa0e6}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Helvetica,Arial,sans-serif;color:var(--fg)}
+body{background:linear-gradient(180deg,var(--bg1),var(--bg2)) fixed;transition:background .6s}
+body.night{--bg1:#0c1730;--bg2:#27365c}
+body.cloudy{--bg1:#56677e;--bg2:#8c9aae}
+body.cloudy.night{--bg1:#1d2430;--bg2:#3b4555}
+body.rain{--bg1:#3d4b5e;--bg2:#6b7d93}
+body.storm{--bg1:#2a2a3a;--bg2:#4b4b63}
+body.snow{--bg1:#7d93b0;--bg2:#b9c8db}
+main{max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 90px)}
+.hero{text-align:center;padding:26px 0 18px}
+.hero .loc{font-size:30px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px}
+.hero .temp{font-size:96px;font-weight:200;line-height:1;margin:4px 0 0 18px}
+.hero .cond{font-size:20px;color:var(--muted)}
+.hero .hl{font-size:18px;margin-top:4px}
+.card{background:var(--card);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-radius:16px;padding:12px 14px;margin:12px 0}
+.card h3{margin:0 0 8px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:7px}
+.hours{display:flex;overflow-x:auto;gap:4px;scrollbar-width:none}
+.hours::-webkit-scrollbar{display:none}
+.h{min-width:54px;text-align:center;font-size:15px;padding:4px 0}
+.h .ic{font-size:26px;margin:6px 0}
+.h .pp{font-size:11px;color:#9fd3ff;height:13px}
+.day{display:grid;grid-template-columns:62px 34px 40px 1fr 40px;align-items:center;gap:6px;padding:9px 0;border-bottom:1px solid var(--line);font-size:17px}
+.day:last-child{border-bottom:0}
+.day .ic{font-size:24px;text-align:center;position:relative}
+.day .ic small{display:block;font-size:10px;color:#9fd3ff;line-height:1}
+.day .lo{color:var(--muted);text-align:right}
+.bar{height:5px;border-radius:3px;background:rgba(0,0,0,.2);position:relative}
+.bar i{position:absolute;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,#7fd3ff,#ffd84d,#ff9b3d)}
+.d3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.d3 .c{background:rgba(0,0,0,.12);border-radius:12px;padding:10px;text-align:center}
+.d3 .c b{display:block;font-size:15px}
+.d3 .seg{display:grid;grid-template-columns:1fr auto auto;font-size:13px;gap:4px;margin-top:6px;text-align:left;align-items:center}
+.d3 .seg span:nth-child(3n+2){font-size:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid2 .card{margin:0}
+.big{font-size:28px;font-weight:400}
+.sub{font-size:13px;color:var(--muted);margin-top:4px}
+#map{height:380px;border-radius:12px;overflow:hidden;background:#223}
+.radarctl{display:flex;align-items:center;gap:10px;margin-top:10px}
+.radarctl button{background:rgba(255,255,255,.2);border:0;color:#fff;border-radius:50%;width:38px;height:38px;font-size:16px}
+.radarctl input{flex:1}
+.radarctl .t{font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+.legend{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:8px}
+.legend+div{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+svg text{fill:rgba(255,255,255,.8);font-size:10px}
+.alert{background:rgba(255,160,0,.3);border:1px solid rgba(255,190,80,.6)}
+.alert.sev-severe,.alert.sev-extreme{background:rgba(220,40,40,.35);border-color:rgba(255,90,90,.7)}
+.alert p{margin:4px 0;font-size:14px}
+.alert details summary{cursor:pointer;font-weight:600}
+.tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;
+  padding:10px 22px calc(env(safe-area-inset-bottom) + 10px);background:rgba(0,0,0,.25);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);z-index:900}
+.tabbar button{background:none;border:0;color:#fff;font-size:15px;display:flex;align-items:center;gap:6px}
+.dots{display:flex;gap:6px}.dots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35)}.dots i.on{background:#fff}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:1000}
+.sheet.open{display:block}
+.panel{position:absolute;left:0;right:0;bottom:0;max-height:88vh;overflow:auto;background:#1b2433;border-radius:18px 18px 0 0;
+  padding:16px 16px calc(env(safe-area-inset-bottom) + 20px);max-width:640px;margin:0 auto}
+.panel h2{margin:0 0 12px;font-size:22px;display:flex;justify-content:space-between}
+.panel h2 button{background:none;border:0;color:#7cc0ff;font-size:17px}
+.search{width:100%;padding:11px 12px;border-radius:10px;border:0;background:#2c374a;color:#fff;font-size:17px}
+.res,.fav{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:12px;background:#273246;margin:8px 0;font-size:16px}
+.fav.active{outline:2px solid #7cc0ff}
+.fav .r{display:flex;align-items:center;gap:10px}
+.fav .del{background:#c0392b;border:0;color:#fff;border-radius:8px;padding:6px 10px;font-size:13px}
+.btn{width:100%;padding:12px;border-radius:12px;border:0;background:#2f6fd0;color:#fff;font-size:16px;margin-top:8px}
+.btn.sec{background:#2c374a}
+.muted{color:var(--muted);font-size:13px}
+.err{background:rgba(200,40,40,.4);padding:10px 12px;border-radius:12px;margin:10px 0;font-size:14px}
+.foot{font-size:11px;color:var(--muted);text-align:center;margin-top:16px;line-height:1.5}
+.foot a{color:var(--muted)}
+.spin{text-align:center;padding:60px 0;color:var(--muted)}
+</style>
+</head>
+<body>
+<main id="app"><div class="spin">Lade Wetterdaten …</div></main>
+
+<nav class="tabbar">
+  <button id="btnMap" aria-label="Radar">🗺️ Radar</button>
+  <div class="dots" id="dots"></div>
+  <button id="btnList" aria-label="Orte">☰ Orte</button>
+</nav>
+
+<div class="sheet" id="sheet"><div class="panel">
+  <h2>Orte <button id="closeSheet">Fertig</button></h2>
+  <input class="search" id="q" placeholder="Stadt oder PLZ suchen" autocomplete="off">
+  <div id="results"></div>
+  <div id="favs"></div>
+  <button class="btn" id="saveCurrent">📍 Aktuellen Standort als Favorit speichern</button>
+  <p class="muted">Favoriten werden nur lokal auf diesem Gerät gespeichert.</p>
+</div></div>
+
+<script>
+/* ===================== Konfiguration ===================== */
+const BS = 'https://api.brightsky.dev';               // Bright Sky: DWD Open Data (MOSMIX, SYNOP, Warnungen)
+const GEO = 'https://geocoding-api.open-meteo.com/v1/search'; // nur Ortssuche (Namen -> Koordinaten)
+const REV = 'https://nominatim.openstreetmap.org/reverse';    // nur Ortsname für GPS-Position
+const WMS = 'https://maps.dwd.de/geoserver/dwd/wms';         // DWD GeoServer (Radar)
+const RADAR_LAYER = 'dwd:Niederschlagsradar';
+const TZ = 'Europe/Berlin';
+
+/* ===================== Speicher ===================== */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+let favs = store.get('favs', []);            // [{id,name,lat,lon}]
+let current = store.get('lastGps', null);    // {name,lat,lon}
+let sel = store.get('sel', 'gps');           // 'gps' | fav id
+let data = null, map = null, radarLayer = null, radarTimes = [], radarIdx = 0, radarTimer = null;
+
+/* ===================== Hilfen ===================== */
+const $ = s => document.querySelector(s);
+const r0 = n => n == null || isNaN(n) ? '–' : Math.round(n);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtDate = d => d.toLocaleDateString('de-DE', {timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit'}).split('.').reverse().join('-');
+const dayName = (iso, i) => i === 0 ? 'Heute' : new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', {weekday:'short'});
+const hourOf = ts => +new Date(ts).toLocaleString('de-DE', {timeZone: TZ, hour:'2-digit', hour12:false}).slice(0,2);
+const localDay = ts => fmtDate(new Date(ts));
+
+const ICON = {
+  'clear-day':'☀️','clear-night':'🌙','partly-cloudy-day':'⛅','partly-cloudy-night':'☁️','cloudy':'☁️',
+  'fog':'🌫️','wind':'💨','rain':'🌧️','sleet':'🌨️','snow':'❄️','hail':'🌨️','thunderstorm':'⛈️'
+};
+const TEXT = {
+  'clear-day':'Klar','clear-night':'Klar','partly-cloudy-day':'Teilweise bewölkt','partly-cloudy-night':'Teilweise bewölkt',
+  'cloudy':'Bewölkt','fog':'Nebel','wind':'Windig','rain':'Regen','sleet':'Schneeregen','snow':'Schnee','hail':'Hagel','thunderstorm':'Gewitter'
+};
+const PRECIP = ['thunderstorm','hail','snow','sleet','rain'];
+const icon = i => ICON[i] || '·';
+
+async function getJSON(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(`HTTP ${r.status} bei ${new URL(url).host}`);
+  return r.json();
+}
+
+/* ===================== Sonnenauf-/untergang (NOAA-Näherung) ===================== */
+function sunTimes(date, lat, lon){
+  const rad = Math.PI/180, d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const n = Math.floor((d - Date.UTC(d.getUTCFullYear(),0,0))/864e5);
+  const g = 2*Math.PI/365*(n-1);
+  const eqt = 229.18*(0.000075+0.001868*Math.cos(g)-0.032077*Math.sin(g)-0.014615*Math.cos(2*g)-0.040849*Math.sin(2*g));
+  const decl = 0.006918-0.399912*Math.cos(g)+0.070257*Math.sin(g)-0.006758*Math.cos(2*g)+0.000907*Math.sin(2*g)-0.002697*Math.cos(3*g)+0.00148*Math.sin(3*g);
+  const ha = Math.acos(Math.cos(90.833*rad)/(Math.cos(lat*rad)*Math.cos(decl)) - Math.tan(lat*rad)*Math.tan(decl))/rad;
+  const mk = m => new Date(d.getTime() + m*60000);
+  return { rise: mk(720 - 4*(lon+ha) - eqt), set: mk(720 - 4*(lon-ha) - eqt) };
+}
+const hm = d => d.toLocaleTimeString('de-DE', {timeZone: TZ, hour:'2-digit', minute:'2-digit'});
+
+/* ===================== Ort bestimmen ===================== */
+function activeLoc(){
+  if(sel !== 'gps'){ const f = favs.find(f => f.id === sel); if(f) return f; sel = 'gps'; }
+  return current;
+}
+function locate(){
+  return new Promise((res, rej) => {
+    if(!navigator.geolocation) return rej(new Error('Standortbestimmung nicht verfügbar'));
+    navigator.geolocation.getCurrentPosition(async p => {
+      const lat = +p.coords.latitude.toFixed(4), lon = +p.coords.longitude.toFixed(4);
+      let name = 'Mein Standort';
+      try{
+        const j = await getJSON(`${REV}?format=jsonv2&zoom=12&accept-language=de&lat=${lat}&lon=${lon}`);
+        const a = j.address || {};
+        name = a.city || a.town || a.village || a.municipality || a.suburb || j.name || name;
+      }catch(e){}
+      current = {id:'gps', name, lat, lon};
+      store.set('lastGps', current);
+      res(current);
+    }, e => rej(new Error('Standort nicht freigegeben – bitte in iOS-Einstellungen › Datenschutz › Ortungsdienste › Safari erlauben oder einen Favoriten wählen.')),
+    {enableHighAccuracy:false, timeout:12000, maximumAge:600000});
+  });
+}
+
+/* ===================== Daten laden ===================== */
+async function load(loc){
+  const today = new Date();
+  const from = fmtDate(today);
+  const to = fmtDate(new Date(today.getTime() + 11*864e5));
+  const q = `lat=${loc.lat}&lon=${loc.lon}&tz=${encodeURIComponent(TZ)}`;
+  const [cur, wx, al] = await Promise.all([
+    getJSON(`${BS}/current_weather?${q}`).catch(() => null),
+    getJSON(`${BS}/weather?${q}&date=${from}&last_date=${to}`),
+    getJSON(`${BS}/alerts?${q}`).catch(() => ({alerts:[]}))
+  ]);
+  return {loc, cur, hours: wx.weather || [], sources: wx.sources || [], alerts: (al && al.alerts) || []};
+}
+
+/* ===================== Tagesaggregation ===================== */
+function aggregateDays(hours){
+  const by = {};
+  for(const h of hours){ (by[localDay(h.timestamp)] ||= []).push(h); }
+  return Object.entries(by).map(([day, hs]) => {
+    const t = hs.map(h => h.temperature).filter(v => v != null);
+    const p = hs.reduce((s, h) => s + (h.precipitation || 0), 0);
+    const pp = Math.max(0, ...hs.map(h => h.precipitation_probability ?? 0));
+    const daytime = hs.filter(h => { const x = hourOf(h.timestamp); return x >= 7 && x <= 20; });
+    const cnt = {};
+    (daytime.length ? daytime : hs).forEach(h => { if(h.icon){ const k = h.icon.replace('-night','-day'); cnt[k] = (cnt[k]||0) + 1; } });
+    let ic = Object.entries(cnt).sort((a,b) => b[1]-a[1])[0]?.[0] || 'cloudy';
+    if(p >= 1 && !PRECIP.includes(ic)){
+      const pr = Object.entries(cnt).filter(([k]) => PRECIP.includes(k)).sort((a,b)=>b[1]-a[1])[0];
+      if(pr) ic = pr[0];
+    }
+    const wind = Math.max(0, ...hs.map(h => h.wind_speed ?? 0));
+    const gust = Math.max(0, ...hs.map(h => h.wind_gust_speed ?? 0));
+    const sun = hs.reduce((s, h) => s + (h.sunshine || 0), 0);
+    return {day, hs, min: Math.min(...t), max: Math.max(...t), p, pp, ic, wind, gust, sun, n: hs.length};
+  }).filter(d => d.n >= 12);
+}
+
+function segment(hs, a, b){
+  const s = hs.filter(h => { const x = hourOf(h.timestamp); return x >= a && x < b; });
+  if(!s.length) return null;
+  const t = s.map(h => h.temperature).filter(v => v != null);
+  const cnt = {}; s.forEach(h => h.icon && (cnt[h.icon] = (cnt[h.icon]||0) + 1));
+  return { t: t.reduce((x,y)=>x+y,0)/t.length, ic: Object.entries(cnt).sort((x,y)=>y[1]-x[1])[0]?.[0],
+           pp: Math.max(0, ...s.map(h => h.precipitation_probability ?? 0)) };
+}
+
+/* ===================== Rendering ===================== */
+function themeFor(ic, night){
+  const b = document.body; b.className = '';
+  if(night) b.classList.add('night');
+  if(!ic) return;
+  if(ic === 'thunderstorm') b.classList.add('storm');
+  else if(['rain','sleet','hail'].includes(ic)) b.classList.add('rain');
+  else if(ic === 'snow') b.classList.add('snow');
+  else if(['cloudy','fog','partly-cloudy-day','partly-cloudy-night'].includes(ic)) b.classList.add('cloudy');
+}
+
+function chartTrend(days){
+  const W = 600, H = 170, P = 26, n = days.length;
+  const lo = Math.floor(Math.min(...days.map(d => d.min))) - 2, hi = Math.ceil(Math.max(...days.map(d => d.max))) + 2;
+  const pmax = Math.max(5, ...days.map(d => d.p));
+  const x = i => P + i*(W-2*P)/(n-1), y = v => 12 + (H-40)*(1-(v-lo)/(hi-lo));
+  const line = k => days.map((d,i) => `${i?'L':'M'}${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join('');
+  const area = `${line('max')} ${days.slice().reverse().map((d,j) => `L${x(n-1-j).toFixed(1)},${y(d.min).toFixed(1)}`).join('')}Z`;
+  const bw = (W-2*P)/n*0.5;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" style="display:block">`;
+  days.forEach((d,i) => { const bh = (d.p/pmax)*(H-60); if(bh>0) s += `<rect x="${x(i)-bw/2}" y="${H-24-bh}" width="${bw}" height="${bh}" rx="2" fill="rgba(110,190,255,.55)"/>`; });
+  s += `<path d="${area}" fill="rgba(255,210,90,.18)"/>`;
+  s += `<path d="${line('max')}" fill="none" stroke="#ffb547" stroke-width="2.5"/>`;
+  s += `<path d="${line('min')}" fill="none" stroke="#7fd3ff" stroke-width="2.5"/>`;
+  days.forEach((d,i) => {
+    s += `<text x="${x(i)}" y="${y(d.max)-6}" text-anchor="middle">${r0(d.max)}°</text>`;
+    s += `<text x="${x(i)}" y="${y(d.min)+14}" text-anchor="middle">${r0(d.min)}°</text>`;
+    s += `<text x="${x(i)}" y="${H-8}" text-anchor="middle">${i===0?'Heute':new Date(d.day+'T12:00').toLocaleDateString('de-DE',{weekday:'short'})}</text>`;
+  });
+  return s + '</svg>';
+}
+
+function chartHourly(hs){
+  const W = 600, H = 120, P = 10, n = hs.length;
+  const t = hs.map(h => h.temperature ?? NaN);
+  const lo = Math.min(...t.filter(isFinite)) - 1, hi = Math.max(...t.filter(isFinite)) + 1;
+  const x = i => P + i*(W-2*P)/(n-1), y = v => 10 + (H-40)*(1-(v-lo)/(hi-lo));
+  const pm = Math.max(2, ...hs.map(h => h.precipitation || 0));
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" style="display:block">`;
+  hs.forEach((h,i) => { const bh = ((h.precipitation||0)/pm)*(H-50); if(bh>0) s += `<rect x="${x(i)-4}" y="${H-20-bh}" width="8" height="${bh}" fill="rgba(110,190,255,.6)"/>`; });
+  s += `<path d="${t.map((v,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('')}" fill="none" stroke="#ffd36b" stroke-width="2.5"/>`;
+  hs.forEach((h,i) => { if(i % 6 === 0) s += `<text x="${x(i)}" y="${H-6}" text-anchor="middle">${String(hourOf(h.timestamp)).padStart(2,'0')}h</text><text x="${x(i)}" y="${y(t[i])-6}" text-anchor="middle">${r0(t[i])}°</text>`; });
+  return s + '</svg>';
+}
+
+function windDir(deg){ if(deg == null) return ''; return ['N','NO','O','SO','S','SW','W','NW'][Math.round(deg/45)%8]; }
+
+function render(){
+  const d = data, loc = d.loc;
+  const now = Date.now();
+  const future = d.hours.filter(h => new Date(h.timestamp).getTime() >= now - 3600e3);
+  const c = d.cur?.weather || future[0] || {};
+  const days = aggregateDays(d.hours);
+  const today = days[0];
+  const st = sunTimes(new Date(), loc.lat, loc.lon);
+  const night = now < st.rise || now > st.set;
+  const ic = c.icon || future[0]?.icon;
+  themeFor(ic, night);
+
+  const gmin = Math.min(...days.map(x => x.min)), gmax = Math.max(...days.map(x => x.max));
+  const station = d.cur?.sources?.[0] || d.sources[0];
+  const next24 = future.slice(0, 25);
+  const next48 = future.slice(0, 49);
+
+  let h = `<section class="hero">
+    <div class="loc">${sel==='gps'?'📍 ':''}${esc(loc.name)}</div>
+    <div class="temp">${r0(c.temperature)}°</div>
+    <div class="cond">${esc(TEXT[ic] || c.condition || '')}</div>
+    ${today ? `<div class="hl">H: ${r0(today.max)}°  T: ${r0(today.min)}°</div>` : ''}
+  </section>`;
+
+  for(const a of d.alerts){
+    h += `<div class="card alert sev-${esc(a.severity)}"><details><summary>⚠️ ${esc(a.headline_de || a.event_de)}</summary>
+      <p>${esc(a.description_de)}</p>${a.instruction_de?`<p><i>${esc(a.instruction_de)}</i></p>`:''}
+      <p class="muted">${new Date(a.onset||a.effective).toLocaleString('de-DE')} – ${a.expires?new Date(a.expires).toLocaleString('de-DE'):'offen'}</p></details></div>`;
+  }
+
+  h += `<div class="card"><h3>🕒 Stündliche Vorhersage</h3><div class="hours">${
+    next24.map((x,i) => `<div class="h"><div>${i===0?'Jetzt':String(hourOf(x.timestamp)).padStart(2,'0')}</div>
+      <div class="pp">${(x.precipitation_probability??0)>=20?x.precipitation_probability+'%':''}</div>
+      <div class="ic">${icon(x.icon)}</div><div>${r0(x.temperature)}°</div></div>`).join('')
+  }</div><div style="margin-top:10px">${next48.length>2?chartHourly(next48):''}</div>
+  <div class="muted">48 h · Linie: Temperatur · Balken: Niederschlag</div></div>`;
+
+  const d3 = days.slice(0,3);
+  h += `<div class="card"><h3>📅 Die nächsten 3 Tage</h3><div class="d3">${d3.map((x,i) => {
+    const segs = [['Morgen',6,12],['Mittag',12,18],['Abend',18,24],['Nacht',0,6]];
+    return `<div class="c"><b>${dayName(x.day,i)}</b><div style="font-size:30px;margin:4px 0">${icon(x.ic)}</div>
+      <div>${r0(x.max)}° / <span class="muted">${r0(x.min)}°</span></div>
+      <div class="sub">💧 ${x.p.toFixed(1)} mm · ${x.pp}%<br>💨 ${r0(x.wind)} km/h${x.gust?` (Böen ${r0(x.gust)})`:''}<br>☀️ ${(x.sun/60).toFixed(1)} h</div>
+      <div class="seg">${segs.map(([n,a,b]) => { const s = segment(x.hs,a,b); return s?`<span>${n}</span><span>${icon(s.ic)}</span><span>${r0(s.t)}°</span>`:''; }).join('')}</div></div>`;
+  }).join('')}</div></div>`;
+
+  h += `<div class="card"><h3>🗓️ ${days.length}-Tage-Vorhersage</h3>${days.map((x,i) => {
+    const l = (x.min-gmin)/(gmax-gmin||1)*100, w = (x.max-x.min)/(gmax-gmin||1)*100;
+    return `<div class="day"><div>${dayName(x.day,i)}</div><div class="ic">${icon(x.ic)}${x.pp>=30?`<small>${x.pp}%</small>`:''}</div>
+      <div class="lo">${r0(x.min)}°</div><div class="bar"><i style="left:${l}%;width:${Math.max(w,4)}%"></i></div><div>${r0(x.max)}°</div></div>`;
+  }).join('')}</div>`;
+
+  if(days.length > 2) h += `<div class="card"><h3>📈 Langzeitverlauf (${days.length} Tage)</h3>${chartTrend(days)}
+    <div class="muted">Orange: Höchst-, Blau: Tiefstwerte · Balken: Tagesniederschlag. Der DWD (MOSMIX) rechnet ca. 10 Tage voraus; weiter reichende Prognosen bietet er nicht als offene Punktvorhersage an.</div></div>`;
+
+  h += `<div class="card"><h3>🌧️ Niederschlagsradar (DWD)</h3><div id="map"></div>
+    <div class="radarctl"><button id="play">▶︎</button><input type="range" id="slider" min="0" max="0" value="0"><span class="t" id="rtime">–</span></div>
+    <div class="legend">${['#c8f0ff','#78c8ff','#2a8cff','#18c818','#f0f000','#ff9600','#ff0000','#c800c8'].map(c=>`<span style="flex:1;background:${c}"></span>`).join('')}</div>
+    <div><span>leicht</span><span>mäßig</span><span>stark</span><span>extrem</span></div></div>`;
+
+  h += `<div class="grid2">
+    <div class="card"><h3>💨 Wind</h3><div class="big">${r0(c.wind_speed_10 ?? c.wind_speed)} km/h</div><div class="sub">aus ${windDir(c.wind_direction_10 ?? c.wind_direction)} · Böen ${r0(c.wind_gust_speed_10 ?? c.wind_gust_speed)} km/h</div></div>
+    <div class="card"><h3>💧 Luftfeuchte</h3><div class="big">${r0(c.relative_humidity)} %</div><div class="sub">Taupunkt ${r0(c.dew_point)}°</div></div>
+    <div class="card"><h3>🌡️ Luftdruck</h3><div class="big">${r0(c.pressure_msl)} hPa</div><div class="sub">Sicht ${c.visibility!=null?(c.visibility/1000).toFixed(0)+' km':'–'}</div></div>
+    <div class="card"><h3>🌅 Sonne</h3><div class="big">${hm(st.rise)}</div><div class="sub">Untergang ${hm(st.set)}</div></div>
+  </div>`;
+
+  h += `<div class="foot">Daten: Deutscher Wetterdienst (Open Data, MOSMIX/SYNOP/Warnungen/Radar) via Bright Sky.<br>
+    ${station?`Station: ${esc(station.station_name)} (${(station.distance/1000).toFixed(1)} km)<br>`:''}
+    Aktualisiert ${new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}<br><button class="btn sec" style="width:auto;padding:8px 16px" onclick="refresh(sel==='gps')">↻ Aktualisieren</button></div>`;
+
+  $('#app').innerHTML = h;
+  renderDots();
+  initRadar(loc);
+}
+
+/* ===================== Radar ===================== */
+async function radarTimeList(){
+  // Versuch 1: verfügbare Zeitpunkte aus GetCapabilities der Ebene (falls CORS erlaubt)
+  try{
+    const r = await fetch(`https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/wms?service=WMS&version=1.3.0&request=GetCapabilities`);
+    const xml = await r.text();
+    const m = xml.match(/<Dimension[^>]*name="time"[^>]*>([^<]+)<\/Dimension>/i);
+    if(m){
+      const v = m[1].trim();
+      let list = [];
+      if(v.includes('/')){
+        const [a,b,step] = v.split('/'); const st = (parseInt(step.replace(/\D/g,''))||5)*60000;
+        for(let t = new Date(b).getTime(); t >= new Date(a).getTime() && list.length < 24; t -= st) list.unshift(new Date(t).toISOString());
+      } else list = v.split(',').slice(-24);
+      if(list.length) return list.map(s => s.replace('.000',''));
+    }
+  }catch(e){}
+  // Versuch 2: Raster selbst berechnen (5-Minuten-Takt, letzte 2 h, 10 min Verzug)
+  const out = [], t0 = Math.floor((Date.now() - 10*60000)/300000)*300000;
+  for(let i = 23; i >= 0; i--) out.push(new Date(t0 - i*300000).toISOString().replace('.000',''));
+  return out;
+}
+
+async function initRadar(loc){
+  if(!window.L){ $('#map').innerHTML = '<div class="err">Kartenbibliothek konnte nicht geladen werden.</div>'; return; }
+  if(map){ map.remove(); map = null; }
+  clearInterval(radarTimer); radarTimer = null;
+  map = L.map('map', {zoomControl:false, attributionControl:true}).setView([loc.lat, loc.lon], 8);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains:'abcd', maxZoom:12, attribution:'© OpenStreetMap, © CARTO, Radar © DWD'}).addTo(map);
+  L.circleMarker([loc.lat, loc.lon], {radius:6, color:'#fff', weight:2, fillColor:'#2f6fd0', fillOpacity:1}).addTo(map);
+  radarLayer = L.tileLayer.wms(WMS, {layers:RADAR_LAYER, format:'image/png', transparent:true, version:'1.3.0', opacity:.75}).addTo(map);
+  radarTimes = await radarTimeList();
+  const sl = $('#slider'); if(!sl) return;
+  sl.max = radarTimes.length - 1; sl.value = radarIdx = radarTimes.length - 1;
+  showFrame(radarIdx);
+  sl.oninput = () => { stopRadar(); showFrame(+sl.value); };
+  $('#play').onclick = () => radarTimer ? stopRadar() : playRadar();
+}
+function showFrame(i){
+  radarIdx = i; const t = radarTimes[i]; if(!t || !radarLayer) return;
+  radarLayer.setParams({time: t});
+  $('#rtime').textContent = new Date(t).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+  $('#slider').value = i;
+}
+function playRadar(){ $('#play').textContent = '❚❚'; radarTimer = setInterval(() => showFrame((radarIdx + 1) % radarTimes.length), 700); }
+function stopRadar(){ clearInterval(radarTimer); radarTimer = null; const p = $('#play'); if(p) p.textContent = '▶︎'; }
+
+/* ===================== Orte-Verwaltung ===================== */
+function renderDots(){
+  const all = ['gps', ...favs.map(f => f.id)];
+  $('#dots').innerHTML = all.map(id => `<i class="${id===sel?'on':''}"></i>`).join('');
+}
+function renderFavs(){
+  const items = [{id:'gps', name: current ? `Aktueller Standort (${current.name})` : 'Aktueller Standort'}, ...favs];
+  $('#favs').innerHTML = '<h3 class="muted" style="margin:16px 0 4px">MEINE ORTE</h3>' + items.map(f =>
+    `<div class="fav ${f.id===sel?'active':''}" data-id="${esc(f.id)}"><span>${f.id==='gps'?'📍 ':''}${esc(f.name)}</span>
+     <span class="r">${f.id!=='gps'?`<button class="del" data-del="${esc(f.id)}">Löschen</button>`:''}›</span></div>`).join('');
+  $('#saveCurrent').style.display = current && !favs.some(f => Math.abs(f.lat-current.lat)<.01 && Math.abs(f.lon-current.lon)<.01) ? '' : 'none';
+}
+function addFav(f){
+  if(favs.some(x => Math.abs(x.lat-f.lat)<.01 && Math.abs(x.lon-f.lon)<.01)) return;
+  favs.push({id: 'f' + Date.now(), name: f.name, lat: f.lat, lon: f.lon});
+  store.set('favs', favs);
+}
+async function select(id){
+  sel = id; store.set('sel', sel);
+  $('#sheet').classList.remove('open');
+  await refresh(id === 'gps');
+}
+
+let qT;
+$('#q').addEventListener('input', e => {
+  clearTimeout(qT); const v = e.target.value.trim();
+  if(v.length < 2){ $('#results').innerHTML = ''; return; }
+  qT = setTimeout(async () => {
+    try{
+      const j = await getJSON(`${GEO}?name=${encodeURIComponent(v)}&count=8&language=de&format=json`);
+      const rs = (j.results || []);
+      $('#results').innerHTML = rs.map((r,i) => `<div class="res" data-i="${i}"><span>${esc(r.name)}<br><span class="muted">${esc([r.postcodes?.[0], r.admin1, r.country].filter(Boolean).join(' · '))}</span></span><span>＋</span></div>`).join('') || '<p class="muted">Nichts gefunden.</p>';
+      $('#results').onclick = ev => {
+        const el = ev.target.closest('.res'); if(!el) return;
+        const r = rs[+el.dataset.i]; addFav({name: r.name, lat: +r.latitude.toFixed(4), lon: +r.longitude.toFixed(4)});
+        $('#q').value = ''; $('#results').innerHTML = '';
+        select(favs[favs.length-1].id);
+      };
+    }catch(err){ $('#results').innerHTML = `<div class="err">Suche fehlgeschlagen: ${esc(err.message)}</div>`; }
+  }, 350);
+});
+$('#favs').addEventListener('click', e => {
+  const del = e.target.closest('[data-del]');
+  if(del){ favs = favs.filter(f => f.id !== del.dataset.del); store.set('favs', favs); if(sel === del.dataset.del) sel = 'gps'; renderFavs(); return; }
+  const f = e.target.closest('.fav'); if(f) select(f.dataset.id);
+});
+$('#saveCurrent').onclick = () => { if(current){ addFav({name: current.name, lat: current.lat, lon: current.lon}); renderFavs(); renderDots(); } };
+$('#btnList').onclick = () => { renderFavs(); $('#sheet').classList.add('open'); };
+$('#closeSheet').onclick = () => $('#sheet').classList.remove('open');
+$('#sheet').addEventListener('click', e => { if(e.target.id === 'sheet') $('#sheet').classList.remove('open'); });
+$('#btnMap').onclick = () => document.getElementById('map')?.scrollIntoView({behavior:'smooth', block:'center'});
+
+/* Wischen zwischen Orten */
+let sx = null;
+document.addEventListener('touchstart', e => { sx = e.target.closest('#map,.hours') ? null : e.touches[0].clientX; }, {passive:true});
+document.addEventListener('touchend', e => {
+  if(sx == null) return; const dx = e.changedTouches[0].clientX - sx; sx = null;
+  if(Math.abs(dx) < 80 || $('#sheet').classList.contains('open')) return;
+  const all = ['gps', ...favs.map(f => f.id)]; const i = all.indexOf(sel);
+  const n = all[(i + (dx < 0 ? 1 : -1) + all.length) % all.length]; if(n !== sel) select(n);
+}, {passive:true});
+
+/* ===================== Start ===================== */
+async function refresh(useGps){
+  try{
+    if(sel === 'gps' && (useGps || !current)){
+      try{ await locate(); }
+      catch(e){ if(!current){ $('#app').innerHTML = `<div class="err">${esc(e.message)}</div><button class="btn" onclick="document.getElementById('btnList').click()">Ort suchen</button>`; renderDots(); return; } }
+    }
+    const loc = activeLoc();
+    if(!loc){ $('#btnList').click(); return; }
+    if(!data) $('#app').innerHTML = '<div class="spin">Lade Wetterdaten …</div>';
+    data = await load(loc);
+    render();
+  }catch(e){
+    $('#app').innerHTML = `<div class="err">Fehler beim Laden: ${esc(e.message)}</div><button class="btn" onclick="location.reload()">Erneut versuchen</button>`;
+  }
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && data && Date.now() - (window._lt||0) > 15*60000){ window._lt = Date.now(); refresh(sel==='gps'); } });
+window._lt = Date.now();
+refresh(true);
+</script>
+</body>
+</html>
